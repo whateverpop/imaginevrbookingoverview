@@ -7,7 +7,7 @@ and writes one self-contained page (index.html).
   python3 vr_overview.py                          live fetch for all festival days
   python3 vr_overview.py --from-file a.json ...   use saved copies of the XHR response
 """
-import argparse, json, sys, time, urllib.request
+import argparse, json, re, sys, time, urllib.request
 from datetime import date, datetime, timedelta, timezone, time as dtime
 from zoneinfo import ZoneInfo
 
@@ -74,14 +74,49 @@ def booked(r):
     return None
 
 
+GHOST = [  # X = filled cell, . = empty; the two eye rows are holes
+    "....XXXX....",
+    "..XXXXXXXX..",
+    ".XXXXXXXXXX.",
+    ".XXXXXXXXXX.",
+    ".XX..XX..XX.",
+    ".XX..XX..XX.",
+    ".XXXXXXXXXX.",
+    ".XXXXXXXXXX.",
+    ".XXXXXXXXXX.",
+    ".XXXXXXXXXX.",
+    ".XXXXXXXXXX.",
+    ".XX.XXXX.XX.",
+    ".X..X..X..X.",
+]
+GLITCH_SHIFT = {5: 1, 9: 1}  # rows of the pink ghost pushed one cell right
+ECHO_ROWS = {2, 3, 7, 8, 11}  # rows repeated in orange, one cell to the left
+
+
+def ghost_svg():
+    def layer(rows, cls):
+        d = ""
+        for y, shift in rows:
+            x = 0
+            for run in re.findall(r"X+|\.+", GHOST[y]):
+                if run[0] == "X":
+                    d += f"M{x + shift} {y}h{len(run)}v1h-{len(run)}z"
+                x += len(run)
+        return f'<path class="{cls}" d="{d}"/>'
+    echo = layer([(y, -1) for y in sorted(ECHO_ROWS)], "g-echo")
+    body = layer([(y, GLITCH_SHIFT.get(y, 0)) for y in range(len(GHOST))], "g-body")
+    return (f'<svg class="ghost" viewBox="-1 0 15 {len(GHOST)}" aria-hidden="true">'
+            f'<style>.g-echo{{fill:var(--orange)}}.g-body{{fill:var(--pink)}}</style>{echo}{body}</svg>')
+
+
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="120">
 <title>Imagine VR/XR bookings live feed</title>
 <style>
-:root{--bg:#f7f7f5;--card:#eceef1;--card-line:#a9aeb7;--ink:#232325;--mute:#5f6168;--line:rgba(35,35,37,.2);--pink:#e24cb4;--orange:#f0653a;--arrow:#e8502a;--on-fill:#232325;--open:#c5e8d0;--low:#ffe28f;--sold:#f4a58a;--closed:#dcdde1;--on-chip:#232325}
-@media(prefers-color-scheme:dark){:root{--bg:#1c1c1e;--card:#2a2a2d;--card-line:#5a5c64;--ink:#f1f1ee;--mute:#a3a5ad;--line:rgba(241,241,238,.22);--pink:#ee62c2;--orange:#f26a40;--arrow:#f26a40;--open:#24503a;--low:#6b5a12;--sold:#7d3322;--closed:#34353a;--on-chip:#f1f1ee}}
+:root{--bg:#f7f7f5;--card:#eceef1;--card-line:#a9aeb7;--ink:#232325;--mute:#5f6168;--line:rgba(35,35,37,.2);--pink:#e24cb4;--orange:#f0653a;--late:#e8502a;--on-fill:#232325;--open:#c5e8d0;--low:#ffe28f;--sold:#f4a58a;--closed:#dcdde1;--on-chip:#232325}
+@media(prefers-color-scheme:dark){:root{--bg:#1c1c1e;--card:#2a2a2d;--card-line:#5a5c64;--ink:#f1f1ee;--mute:#a3a5ad;--line:rgba(241,241,238,.22);--pink:#ee62c2;--orange:#f26a40;--late:#f26a40;--open:#24503a;--low:#6b5a12;--sold:#7d3322;--closed:#34353a;--on-chip:#f1f1ee}}
 *{box-sizing:border-box}
 body{margin:0;padding:20px 16px 48px;background:var(--bg);color:var(--ink);font:16px/1.45 "Helvetica Neue",Arial,system-ui,sans-serif;max-width:900px;margin-inline:auto}
 :focus-visible{outline:3px solid var(--pink);outline-offset:2px}
@@ -90,7 +125,7 @@ body{margin:0;padding:20px 16px 48px;background:var(--bg);color:var(--ink);font:
 .top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
 h1{font-size:clamp(2.6rem,10vw,4.4rem);line-height:.9;margin:0}
 .clock{font-size:1.15rem;font-weight:700;font-variant-numeric:tabular-nums}
-.arrow{display:block;width:180px;height:30px;margin:6px 0 10px;color:var(--arrow)}
+.ghost{display:block;width:75px;height:65px;margin:10px 0 12px;shape-rendering:crispEdges}
 .mute{color:var(--mute);font-size:.85rem}
 .tasks{margin:24px 0 10px}
 .tasks h2{font-size:2rem;line-height:1;margin:0 0 4px}
@@ -99,7 +134,7 @@ h1{font-size:clamp(2.6rem,10vw,4.4rem);line-height:.9;margin:0}
 .task{position:relative;background:var(--card);border-radius:2px;padding:16px 20px 14px;display:grid;grid-template-columns:auto 1fr;gap:0 16px;align-items:center}
 .task::after{content:"";position:absolute;inset:6px;border:1px solid var(--card-line);pointer-events:none}
 .task.soon::after{border:2px solid var(--pink)}
-.task.late::after{border:2px solid var(--arrow)}
+.task.late::after{border:2px solid var(--late)}
 .task .time{grid-row:span 2;font-size:3.2rem;line-height:.95;font-variant-numeric:tabular-nums}
 .task .what{font-weight:700;line-height:1.2}
 .task .meta{color:var(--mute);font-size:1rem}
@@ -123,7 +158,7 @@ h1{font-size:clamp(2.6rem,10vw,4.4rem);line-height:.9;margin:0}
 .past{opacity:.45}
 </style></head><body>
 <header class="top"><h1 class="disp">Imagine VR/XR bookings</h1><div class="clock card-label" id="clock"></div></header>
-<svg class="arrow" viewBox="0 0 180 30" aria-hidden="true"><polyline points="2,5 40,14 62,8 100,20 124,14 156,25" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="miter"/><polygon points="177,29 154,32 162,15" fill="currentColor"/></svg>
+__GHOST__
 <div class="mute">Data from https://book.filmhallen.nl/#, last updated <span id="updated">__UPDATED__</span>.</div>
 <div class="mute">Green = available, yellow/few left = 1/2 booked, red = sold out; grey = past.</div>
 <section class="tasks" id="tasks" aria-labelledby="tasks-h"></section>
@@ -261,7 +296,7 @@ def main():
     }
     stamp = datetime.now(AMS).strftime("%a %d %b %H:%M")
     esc = lambda o: json.dumps(o).replace("</", "<\\/")
-    html = PAGE.replace("__DATA__", esc(data)).replace("__META__", esc(meta)).replace("__UPDATED__", stamp)
+    html = PAGE.replace("__DATA__", esc(data)).replace("__META__", esc(meta)).replace("__UPDATED__", stamp).replace("__GHOST__", ghost_svg())
     with open(a.out, "w", encoding="utf-8") as fh:
         fh.write(html)
     print(f"{len(data)} VR slots written to {a.out}")
