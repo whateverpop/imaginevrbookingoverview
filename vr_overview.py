@@ -65,7 +65,7 @@ PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="120">
-<title>Imagine VR/XR bookings</title>
+<title>Imagine VR/XR bookings live feed</title>
 <style>
 :root{--bg:#fff;--fg:#1a1a1a;--mute:#666;--line:#ddd;--open:#d8f0d8;--low:#ffe9b3;--sold:#f4c7c7;--closed:#e6e6e6}
 @media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mute:#aaa;--line:#333;--open:#1f4a28;--low:#5a4510;--sold:#5c2222;--closed:#2c2c2c}}
@@ -82,8 +82,8 @@ h1{font-size:1.25rem;margin:0}.mute{color:var(--mute);font-size:.85rem}
 .past{opacity:.45}
 </style></head><body>
 <h1>Imagine VR/XR bookings</h1>
-<div class="mute">Data from the Filmhallen booking system, last updated __UPDATED__. This page reloads itself every 2 minutes.</div>
-<div class="mute">Green = available, yellow = few left, red crossed out = sold out, grey = not on sale. Dimmed = already started. Numbers = free places now, shown only for slots starting within 2 hours.</div>
+<div class="mute">Data from https://book.filmhallen.nl/#, last updated __UPDATED__.</div>
+<div class="mute">Green = available, yellow/few left = 1/2 booked, red = sold out; grey = past.</div>
 <div class="tabs" id="tabs"></div><div id="out"></div>
 <script>
 const D=__DATA__,tz="Europe/Amsterdam";
