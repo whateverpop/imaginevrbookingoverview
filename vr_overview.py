@@ -7,7 +7,7 @@ and writes one self-contained page (index.html).
   python3 vr_overview.py                          live fetch for all festival days
   python3 vr_overview.py --from-file a.json ...   use saved copies of the XHR response
 """
-import argparse, json, os, re, sys, time, urllib.request
+import argparse, json, os, re, sys, time, unicodedata, urllib.request
 from datetime import date, datetime, timedelta, timezone, time as dtime
 from zoneinfo import ZoneInfo
 
@@ -166,6 +166,17 @@ INFO = {
 }
 
 
+def has_info(title):
+    """Same matching idea as the page (see infoFor in the script below); used to log pieces without host info."""
+    fold = lambda t: "".join(c for c in unicodedata.normalize("NFD", t.lower()) if unicodedata.category(c) != "Mn")  # "Lúcido" -> "lucido"
+    norm = lambda t: re.sub(r"[^a-z0-9]+", "", re.sub(r"^the\s+", "", fold(t)))
+    n, words = norm(title), [w for w in re.split(r"[^a-z0-9]+", fold(title)) if len(w) >= 4]
+    for key in map(norm, INFO):
+        if n == key or key in n or any(key.startswith(w) or w.startswith(key) for w in words):
+            return True
+    return False
+
+
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -248,9 +259,14 @@ const today=fD.format(new Date());
 let cur=days.includes(today)?today:days[0];
 const TXT={open:"",low:" few left",sold:" full",closed:" closed"};
 const INFO=__INFO__,openInfo=new Set();
-const norm=s=>s.toLowerCase().replace(/^the\\s+/,"").replace(/[^a-z0-9]+/g,"");
+const fold=s=>s.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase(); // "Lúcido" -> "lucido"
+const norm=s=>fold(s).replace(/^the\\s+/,"").replace(/[^a-z0-9]+/g,"");
 const INFO_KEYS=Object.keys(INFO).map(k=>[norm(k),INFO[k]]);
-function infoFor(title){const n=norm(title);const hit=INFO_KEYS.find(k=>n===k[0])||INFO_KEYS.find(k=>n.includes(k[0]));return hit?hit[1]:null}
+const words=s=>fold(s).split(/[^a-z0-9]+/).filter(w=>w.length>=4);
+function infoFor(title){ // exact, then key inside title, then a title word that is a prefix of the key (or the other way round): "Lucid" finds "Lucido"
+  const n=norm(title),ws=words(title);
+  const hit=INFO_KEYS.find(k=>n===k[0])||INFO_KEYS.find(k=>n.includes(k[0]))||INFO_KEYS.find(k=>ws.some(w=>k[0].startsWith(w)||w.startsWith(k[0])));
+  return hit?hit[1]:null}
 let infoN=0;
 function infoUI(title,key){ // [button, panel] for a piece, or null when there is no host info for it
   const items=infoFor(title);if(!items)return null;
@@ -411,6 +427,9 @@ def main():
             time.sleep(0.3)
     for r in rows.values():
         r["booked"] = booked(r)
+    missing = sorted({r["title"] for r in rows.values() if not has_info(r["title"])})
+    if missing:
+        print("no host info (INFO) matches these titles: " + ", ".join(missing), file=sys.stderr)
     data = sorted(rows.values(), key=lambda r: r["start"])
     meta = {
         "built": now.isoformat(),
