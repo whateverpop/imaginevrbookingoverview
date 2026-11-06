@@ -17,7 +17,15 @@ SEATPLAN = "https://book.filmhallen.nl/webservices/cinema_seatplans/getSeatPlanD
 UA = {"User-Agent": "Mozilla/5.0 (Imagine staff overview)", "Accept": "application/json"}
 AMS = ZoneInfo("Europe/Amsterdam")
 COUNT_WINDOW_HOURS = 2  # only look up free places for slots starting within this many hours
-PRELOAD_FROM, PRELOAD_TO = dtime(14, 0), dtime(14, 15)  # Mon-Fri: slots starting in this range are always counted and the page lists them as tasks from the start of the day
+# Slots starting in this range are always seat-counted, and the page lists the booked ones as tasks from the start of the day.
+PRELOAD_WEEKDAY = (dtime(14, 0), dtime(14, 15))  # Mon-Fri
+PRELOAD_WEEKEND = (dtime(12, 0), dtime(12, 15))  # Sat-Sun
+
+
+def in_preload(local):
+    lo, hi = PRELOAD_WEEKEND if local.weekday() >= 5 else PRELOAD_WEEKDAY
+    return lo <= local.time() <= hi
+
 GRACE_MINUTES = 15      # a slot that started up to this long ago is still looked up (the page keeps it as a task that long)
 MAX_PLAN_CALLS = 40     # safety cap per run
 
@@ -148,7 +156,7 @@ INFO = {
     "Claws": [
         "Guests need to be setup at least 5 minutes before starting time. Show them the print-out with QR code that links to instructional video and starting phrase \u201chi, how can I help you?\u201d + safeword \u201ctraffic light\u201d.",
         "Guests do not need to use their own phone. They use ours and our headphones.",
-        "Make sure headphones are on and connected to BT (ask Camile for phone code).",
+        "Make sure headphones are on and connected to BT (phone code: 000000).",
     ],
     "Crafting Crimes": [
         "Launched via regular Library.",
@@ -222,14 +230,17 @@ __GHOST__
 <div class="tabs" id="tabs"></div><div id="out"></div>
 <script>
 let D=__DATA__,META=__META__;const tz="Europe/Amsterdam";
-const PRE_FROM=14*60,PRE_TO=14*60+15; // Mon-Fri: slots starting 14:00-14:15 are listed from the start of the day
+const PRE_WEEKDAY=[14*60,14*60+15],PRE_WEEKEND=[12*60,12*60+15]; // slots starting in this range are listed from the start of the day: Mon-Fri 14:00-14:15, Sat/Sun 12:00-12:15
+const isWeekend=dow=>dow===0||dow===6;
+const preRange=dow=>isWeekend(dow)?PRE_WEEKEND:PRE_WEEKDAY;
+const hhmm=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
 const APPEAR=15,GRACE=15,ARRIVE=10,STALE=30; // minutes: task appears this long before the start / stays this long after it / guests may show up this early / data older than this gets a warning
 const fT=new Intl.DateTimeFormat("nl-NL",{timeZone:tz,hour:"2-digit",minute:"2-digit"});
 const fD=new Intl.DateTimeFormat("en-CA",{timeZone:tz});
 const fL=new Intl.DateTimeFormat("en-GB",{timeZone:tz,weekday:"short",day:"numeric",month:"short"});
 function prep(rows){rows.forEach(r=>{const t=new Date(r.start);r.ms=+t;r.day=fD.format(t);r.t=fT.format(t);r.label=fL.format(t);
   const [Y,M,Dy]=r.day.split("-").map(Number),dow=new Date(Date.UTC(Y,M-1,Dy)).getUTCDay(),[hh,mm]=r.t.split(":").map(Number),mod=hh*60+mm;
-  r.pre=dow>=1&&dow<=5&&mod>=PRE_FROM&&mod<=PRE_TO;});return rows}
+  const pr=preRange(dow);r.dow=dow;r.pre=mod>=pr[0]&&mod<=pr[1];});return rows}
 D=prep(D);
 const isPre=(r,now)=>r.pre&&r.day===fD.format(now);
 let days=[...new Set(D.map(r=>r.day))].sort();
@@ -264,7 +275,7 @@ function renderTasks(){
   const tasks=shown.filter(r=>r.booked===true).sort((a,b)=>a.ms-b.ms);
   const head=h("div","tasks-head");
   const title=h("h2","disp","To set up");title.id="tasks-h";head.append(title);
-  head.append(h("div","mute","Booked slots show up "+APPEAR+" min before the start and stay until "+GRACE+" min after it."+(D.some(r=>isPre(r,now))?" Mon-Fri the slots at 14:00-14:15 are listed from the start of the day.":"")));
+  head.append(h("div","mute","Booked slots show up "+APPEAR+" min before the start and stay until "+GRACE+" min after it."+(()=>{const ps=D.find(r=>isPre(r,now));if(!ps)return"";const pr=preRange(ps.dow);return" "+(isWeekend(ps.dow)?"Sat/Sun":"Mon-Fri")+" the slots at "+hhmm(pr[0])+"-"+hhmm(pr[1])+" are listed from the start of the day."})()));
   if(META.built){
     const age=Math.max(0,Math.round((now-Date.parse(META.built))/60000));
     const old=age>STALE;
@@ -385,7 +396,7 @@ def main():
             # sold slots already count as booked; closed slots are looked up too, because sales
             # can close shortly before the start while the slot still has guests coming
             local = start.astimezone(AMS)
-            preload = local.weekday() < 5 and local.date() == now.astimezone(AMS).date() and PRELOAD_FROM <= local.time() <= PRELOAD_TO
+            preload = local.date() == now.astimezone(AMS).date() and in_preload(local)
             if not r or r["status"] == "sold" or not (now - timedelta(minutes=GRACE_MINUTES) <= start and (start <= now + timedelta(hours=COUNT_WINDOW_HOURS) or preload)):
                 continue
             if calls >= MAX_PLAN_CALLS:
