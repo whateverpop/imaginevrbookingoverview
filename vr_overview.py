@@ -148,6 +148,7 @@ INFO = {
     "Library of Dreams": [
         "Launched via regular Library.",
         RESTART,
+        "Give flyer to person, QR code on back with more info and exploration of the dreams.",
     ],
     "Sunset Motel": [
         "Launched via \u201cUnknown Sources\u201d (vertical bar in menu).",
