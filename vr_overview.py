@@ -257,7 +257,7 @@ const isPre=(r,now)=>r.pre&&r.day===fD.format(now);
 let days=[...new Set(D.map(r=>r.day))].sort();
 const today=fD.format(new Date());
 let cur=days.includes(today)?today:days[0];
-const TXT={open:"",low:" few left",sold:" full",closed:" closed"};
+const TXT={open:"",low:" 1 left",sold:" full",closed:" closed"};
 const INFO=__INFO__,openInfo=new Set();
 const fold=s=>s.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase(); // "Lúcido" -> "lucido"
 const norm=s=>fold(s).replace(/^the\\s+/,"").replace(/[^a-z0-9]+/g,"");
