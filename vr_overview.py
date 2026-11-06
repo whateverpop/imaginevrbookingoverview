@@ -337,7 +337,7 @@ function renderPieces(){
     const ui=infoUI(title,"p"+title),head=h("div","piece-head");
     head.append(h("h2","disp",title));if(ui)head.append(ui[0]);
     p.append(head);
-    p.append(h("div","mute",list[0].room+" · "+list.length+" slots · "+sold+" full"+(low?" · "+low+" few left":"")));
+    p.append(h("div","mute",list[0].room+" · "+list.length+" slots · "+sold+" full"+(low?" · "+low+" 1 left":"")));
     if(ui)p.append(ui[1]);
     const c=h("div","chips");
     list.forEach(r=>c.append(h("span","chip "+r.status+(r.ms<Date.now()?" past":""),r.t+(r.free!==undefined?" · "+r.free+"/"+r.cap+" free":TXT[r.status]))));
