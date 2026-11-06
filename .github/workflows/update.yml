@@ -1,7 +1,7 @@
 name: Update overview
 on:
   schedule:
-    - cron: "22, 52 * * * *"  # every 15 min, but off the :00/:15/:30/:45 marks when GitHub is busiest (UTC)
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
