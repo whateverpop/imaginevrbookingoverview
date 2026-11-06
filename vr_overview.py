@@ -7,7 +7,7 @@ and writes one self-contained page (index.html).
   python3 vr_overview.py                          live fetch for all festival days
   python3 vr_overview.py --from-file a.json ...   use saved copies of the XHR response
 """
-import argparse, json, re, sys, time, urllib.request
+import argparse, json, os, re, sys, time, urllib.request
 from datetime import date, datetime, timedelta, timezone, time as dtime
 from zoneinfo import ZoneInfo
 
@@ -109,10 +109,58 @@ def ghost_svg():
             f'<style>.g-echo{{fill:var(--orange)}}.g-body{{fill:var(--pink)}}</style>{echo}{body}</svg>')
 
 
+# Host notes per piece, shown behind the "i" button. Edit the text here.
+# Keys are matched against the piece title ignoring case, a leading "The" and punctuation,
+# so "The Great Orator" also matches a title like "Great Orator".
+DARKFIELD = "Darkfields Audio. Spatial Stereo Audio, No VR, needs to be started via phone behind curtain."
+RESTART = "Restart before every run and calibrate to chair."
+INFO = {
+    "Double": [
+        DARKFIELD,
+        "Uses plugged in headphones, make sure they are on.",
+        "Visitors should not drink water. Light on table warm white.",
+    ],
+    "Eternal": [
+        DARKFIELD,
+        "Uses plugged in headphones, make sure they are on.",
+        "Use protective cover on bed. Candles on around bed and on bedside table.",
+    ],
+    "Visitors": [
+        DARKFIELD,
+        "Uses wireless headphones, make sure headphones are on and charged.",
+        "Mention red light and point to the correct door. Make sure red light is placed at door.",
+    ],
+    "The Great Orator": [
+        "Possibility of VHS recording (ask Camile).",
+    ],
+    "Lucido": [
+        "Launched via wireless Quest Link, app is located within QL.",
+        RESTART,
+    ],
+    "Library of Dreams": [
+        "Launched via regular Library.",
+        RESTART,
+    ],
+    "Sunset Motel": [
+        "Launched via \u201cUnknown Sources\u201d (vertical bar in menu).",
+        RESTART,
+    ],
+    "Claws": [
+        "Guests need to be setup at least 5 minutes before starting time. Show them the print-out with QR code that links to instructional video and starting phrase \u201chi, how can I help you?\u201d + safeword \u201ctraffic light\u201d.",
+        "Guests do not need to use their own phone. They use ours and our headphones.",
+        "Make sure headphones are on and connected to BT (ask Camile for phone code).",
+    ],
+    "Crafting Crimes": [
+        "Launched via regular Library.",
+        RESTART,
+        "6 candles on table, 3 left and 3 right. Infrared on pipes above table.",
+    ],
+}
+
+
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="120">
 <title>Imagine VR/XR bookings live feed</title>
 <style>
 :root{--bg:#f7f7f5;--card:#eceef1;--card-line:#a9aeb7;--ink:#232325;--mute:#5f6168;--line:rgba(35,35,37,.2);--pink:#e24cb4;--orange:#f0653a;--late:#e8502a;--on-fill:#232325;--open:#c5e8d0;--low:#ffe28f;--sold:#f4a58a;--closed:#dcdde1;--on-chip:#232325}
@@ -138,7 +186,7 @@ h1{font-size:clamp(2.6rem,10vw,4.4rem);line-height:.9;margin:0}
 .task .time{grid-row:span 2;font-size:3.2rem;line-height:.95;font-variant-numeric:tabular-nums}
 .task .what{font-weight:700;line-height:1.2}
 .task .meta{color:var(--mute);font-size:1rem}
-.task .when{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;margin-top:10px;font-size:.9rem;font-weight:600}
+.task .when{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;margin-top:10px;font-size:.9rem;font-weight:600}
 .task .when .state{padding:1px 8px;border-radius:3px;background:var(--closed);color:var(--on-chip)}
 .task.soon .state{background:var(--pink);color:var(--on-fill)}
 .task.late .state{background:var(--orange);color:var(--on-fill)}
@@ -152,6 +200,15 @@ h1{font-size:clamp(2.6rem,10vw,4.4rem);line-height:.9;margin:0}
 .tabs button[aria-pressed=true]{background:var(--pink);border-color:var(--pink);color:var(--on-fill)}
 .piece{border-top:2px solid var(--line);padding:12px 0}
 .piece h2{font-size:1.6rem;line-height:1;margin:0}
+.piece-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.info-btn{flex:none;width:32px;height:32px;padding:0;border:2px solid var(--ink);border-radius:3px;background:none;color:inherit;font:italic 700 1.05rem/1 Georgia,"Times New Roman",serif;cursor:pointer}
+.info-btn[aria-expanded=true]{background:var(--pink);border-color:var(--pink);color:var(--on-fill)}
+.info{margin:10px 0 4px;padding:12px 16px;background:var(--card);border-radius:2px;font-size:.95rem}
+.info ul{margin:0;padding-left:1.1em}
+.info li+li{margin-top:6px}
+.task .when .booked{margin-left:auto}
+.task .when .info-btn{width:30px;height:30px;font-size:.95rem}
+.task .info{grid-column:1/-1;background:var(--bg)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{padding:4px 10px;border-radius:3px;font-size:.9rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--on-chip)}
 .open{background:var(--open)}.low{background:var(--low)}.sold{background:var(--sold);text-decoration:line-through}.closed{background:var(--closed)}
@@ -164,20 +221,37 @@ __GHOST__
 <section class="tasks" id="tasks" aria-labelledby="tasks-h"></section>
 <div class="tabs" id="tabs"></div><div id="out"></div>
 <script>
-const D=__DATA__,META=__META__,tz="Europe/Amsterdam";
+let D=__DATA__,META=__META__;const tz="Europe/Amsterdam";
 const PRE_FROM=14*60,PRE_TO=14*60+15; // Mon-Fri: slots starting 14:00-14:15 are listed from the start of the day
 const APPEAR=15,GRACE=15,ARRIVE=10,STALE=30; // minutes: task appears this long before the start / stays this long after it / guests may show up this early / data older than this gets a warning
 const fT=new Intl.DateTimeFormat("nl-NL",{timeZone:tz,hour:"2-digit",minute:"2-digit"});
 const fD=new Intl.DateTimeFormat("en-CA",{timeZone:tz});
 const fL=new Intl.DateTimeFormat("en-GB",{timeZone:tz,weekday:"short",day:"numeric",month:"short"});
-D.forEach(r=>{const t=new Date(r.start);r.ms=+t;r.day=fD.format(t);r.t=fT.format(t);r.label=fL.format(t);r.past=t<new Date();
+function prep(rows){rows.forEach(r=>{const t=new Date(r.start);r.ms=+t;r.day=fD.format(t);r.t=fT.format(t);r.label=fL.format(t);
   const [Y,M,Dy]=r.day.split("-").map(Number),dow=new Date(Date.UTC(Y,M-1,Dy)).getUTCDay(),[hh,mm]=r.t.split(":").map(Number),mod=hh*60+mm;
-  r.pre=dow>=1&&dow<=5&&mod>=PRE_FROM&&mod<=PRE_TO;});
+  r.pre=dow>=1&&dow<=5&&mod>=PRE_FROM&&mod<=PRE_TO;});return rows}
+D=prep(D);
 const isPre=(r,now)=>r.pre&&r.day===fD.format(now);
-const days=[...new Set(D.map(r=>r.day))].sort();
+let days=[...new Set(D.map(r=>r.day))].sort();
 const today=fD.format(new Date());
 let cur=days.includes(today)?today:days[0];
 const TXT={open:"",low:" few left",sold:" full",closed:" closed"};
+const INFO=__INFO__,openInfo=new Set();
+const norm=s=>s.toLowerCase().replace(/^the\\s+/,"").replace(/[^a-z0-9]+/g,"");
+const INFO_KEYS=Object.keys(INFO).map(k=>[norm(k),INFO[k]]);
+function infoFor(title){const n=norm(title);const hit=INFO_KEYS.find(k=>n===k[0])||INFO_KEYS.find(k=>n.includes(k[0]));return hit?hit[1]:null}
+let infoN=0;
+function infoUI(title,key){ // [button, panel] for a piece, or null when there is no host info for it
+  const items=infoFor(title);if(!items)return null;
+  const id="info"+(++infoN),open=openInfo.has(key);
+  const btn=h("button","info-btn","i");btn.type="button";
+  btn.setAttribute("aria-label","Info about "+title);btn.setAttribute("aria-expanded",open);btn.setAttribute("aria-controls",id);
+  const panel=h("div","info");panel.id=id;panel.hidden=!open;
+  const ul=h("ul");items.forEach(t=>ul.append(h("li","",t)));panel.append(ul);
+  // open/closed state is remembered per piece, so it survives the page's periodic re-renders
+  btn.onclick=()=>{const o=panel.hidden;panel.hidden=!o;btn.setAttribute("aria-expanded",o);if(o)openInfo.add(key);else openInfo.delete(key)};
+  return [btn,panel];
+}
 function h(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 function dur(m){const h=Math.floor(m/60),n=m%60;return h?(n?h+" h "+n+" min":h+" h"):n+" min"}
 function bookedText(r){return r.free!==undefined&&r.cap?(r.cap-r.free)+" of "+r.cap+" booked":(r.status==="sold"?"fully booked":"booked")}
@@ -205,8 +279,10 @@ function renderTasks(){
       c.append(h("div","time disp",r.t),h("div","what",r.title),h("div","meta card-label",r.room));
       const w=h("div","when");
       const st=diff>ARRIVE?"in "+dur(Math.ceil(diff)):diff>0?"in "+dur(Math.ceil(diff))+", guests may arrive":Math.floor(-diff)<1?"starting now":"started "+dur(Math.floor(-diff))+" ago";
-      w.append(h("span","state",st),h("span","",bookedText(r)));
-      c.append(w);list.append(c);
+      w.append(h("span","state",st),h("span","booked",bookedText(r)));
+      const ui=infoUI(r.title,"t"+r.id);
+      if(ui)w.append(ui[0]);
+      c.append(w);if(ui)c.append(ui[1]);list.append(c);
     });
     box.append(list);
   }else{
@@ -217,24 +293,59 @@ function renderTasks(){
   if(unk.length)box.append(h("p","warn","No booking count for "+unk.length+" slot"+(unk.length>1?"s":"")+" (first: "+unk[0].t+" "+unk[0].title+"). Check those in the overview below."));
 }
 function render(){
-  const tabs=document.getElementById("tabs"),out=document.getElementById("out");
-  tabs.replaceChildren();out.replaceChildren();
-  if(!D.length){out.append(h("p","","No VR slots found."));return}
+  const tabs=document.getElementById("tabs");
+  tabs.replaceChildren();
   days.forEach(d=>{const b=h("button","",D.find(r=>r.day===d).label);b.setAttribute("aria-pressed",d===cur);b.onclick=()=>{cur=d;render()};tabs.append(b)});
+  renderPieces();
+}
+function renderPieces(){
+  const out=document.getElementById("out");
+  out.replaceChildren();
+  if(!D.length){out.append(h("p","","No VR slots found."));return}
   const rows=D.filter(r=>r.day===cur).sort((a,b)=>a.start.localeCompare(b.start));
   const groups=new Map();rows.forEach(r=>{if(!groups.has(r.title))groups.set(r.title,[]);groups.get(r.title).push(r)});
   groups.forEach((list,title)=>{
     const sold=list.filter(r=>r.status==="sold").length,low=list.filter(r=>r.status==="low").length;
     const p=h("div","piece");
-    p.append(h("h2","disp",title));
+    const ui=infoUI(title,"p"+title),head=h("div","piece-head");
+    head.append(h("h2","disp",title));if(ui)head.append(ui[0]);
+    p.append(head);
     p.append(h("div","mute",list[0].room+" · "+list.length+" slots · "+sold+" full"+(low?" · "+low+" few left":"")));
+    if(ui)p.append(ui[1]);
     const c=h("div","chips");
-    list.forEach(r=>c.append(h("span","chip "+r.status+(r.past?" past":""),r.t+(r.free!==undefined?" · "+r.free+"/"+r.cap+" free":TXT[r.status]))));
+    list.forEach(r=>c.append(h("span","chip "+r.status+(r.ms<Date.now()?" past":""),r.t+(r.free!==undefined?" · "+r.free+"/"+r.cap+" free":TXT[r.status]))));
     p.append(c);out.append(p);
   });
 }
-renderTasks();render();
-setInterval(renderTasks,10000);
+// Keep everything live without depending on the page's own cache:
+// - every 10 s the countdowns and "min ago" text are recomputed from the clock
+// - every 60 s data.json is fetched with cache bypass and swapped in when a newer build exists
+// - when the tab/phone wakes up everything catches up at once (browsers pause timers in the background)
+function tick(){try{renderTasks()}catch(e){console.error(e)}}
+let fetching=false;
+async function refresh(){
+  if(fetching)return;fetching=true;
+  try{
+    const r=await fetch("data.json?t="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;
+    const j=await r.json();
+    if(!j||!Array.isArray(j.data)||!j.meta||!j.meta.built||(META&&META.built&&Date.parse(j.meta.built)<=Date.parse(META.built)))return;
+    D=prep(j.data);META=j.meta;
+    days=[...new Set(D.map(r=>r.day))].sort();
+    const t=fD.format(Date.now());
+    if(!days.includes(cur))cur=days.includes(t)?t:days[0];
+    const b=Date.parse(META.built);
+    document.getElementById("updated").textContent=fL.format(b)+" "+fT.format(b);
+    render();tick();
+  }catch(e){}finally{fetching=false}
+}
+tick();render();refresh();
+setInterval(tick,10000);
+setInterval(renderPieces,60000);
+setInterval(refresh,60000);
+const wake=()=>{tick();renderPieces();refresh()};
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)wake()});
+["focus","pageshow","online"].forEach(ev=>window.addEventListener(ev,wake));
 </script></body></html>
 """
 
@@ -296,9 +407,13 @@ def main():
     }
     stamp = datetime.now(AMS).strftime("%a %d %b %H:%M")
     esc = lambda o: json.dumps(o).replace("</", "<\\/")
-    html = PAGE.replace("__DATA__", esc(data)).replace("__META__", esc(meta)).replace("__UPDATED__", stamp).replace("__GHOST__", ghost_svg())
+    html = PAGE.replace("__DATA__", esc(data)).replace("__META__", esc(meta)).replace("__UPDATED__", stamp).replace("__GHOST__", ghost_svg()).replace("__INFO__", esc(INFO))
     with open(a.out, "w", encoding="utf-8") as fh:
         fh.write(html)
+    # the page polls this small file with cache bypass, so staff devices get new data
+    # even while GitHub Pages / the browser still hold an older copy of index.html
+    with open(os.path.join(os.path.dirname(os.path.abspath(a.out)), "data.json"), "w", encoding="utf-8") as fh:
+        json.dump({"data": data, "meta": meta}, fh)
     print(f"{len(data)} VR slots written to {a.out}")
 
 
